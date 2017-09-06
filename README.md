@@ -1,2 +1,2 @@
 # rse2017
-Repository for the talk "Telling a story with your code: Literate Programming with Notebooks"
+Repository for the talk "Telling a story with your code: Literate Programming with Notebooks", presented at the 2nd Research Software Engineers Conference, which took place at September 7-8 2017.

@@ -1,0 +1,318 @@
+
+# coding: utf-8
+
+# # Example: IDEB Analysis
+
+# We are going to analyse data corresponding to the IDEB (Basic Education Development Index) for brazilian cities. The data comes from the file
+
+# In[1]:
+
+
+ideb_file = "IDEB por Município Rede Federal Séries Finais (5ª a 8ª).xml"
+
+
+
+# which was obtained from the main brazilian government open data site <a href="http://dados.gov.br">dados.gov.br</a>
+
+# Since we have an .xml file, we'll use the *xml.etree.ElementTree* module to parse its contents. For simplicity, we'll call this module *ET*.
+
+# In[2]:
+
+
+import xml.etree.ElementTree as ET
+
+
+
+# ### The ElementTree (ET) module
+# 
+# An XML file is a hierarchical set of data, so the most intuitive way to represent this data is by a tree. To do this, the ET module implements two classes: the ElementTree class represents the whole XML file as a tree, and the Element class represents one node of this tree. All interactions that occurr with the whole file (like reading and writing to this file) are done through the ElementTree class; on the other hand, every interaction with an isolated element of the XML and its subelements are done through the Element class.
+# 
+# By reading the docs, we learn that the *ET.parse* methods returns an *ElementTree* from a file.
+
+# In[3]:
+
+
+tree = ET.parse(ideb_file)
+
+
+
+# The *ElementTree* class has the following structure:
+
+# In[4]:
+
+
+dir(tree)
+
+
+
+# According to the documentation for this module, we access the ElementTree via its *root* node, which is an *Element* class instance. To see the root element, we use the *getroot* method:
+
+# In[5]:
+
+
+root = tree.getroot()
+
+
+
+# As an *Element*, the root object has the *tag* and *attrib* properties, and *attrib* is a dictionary of its attributes. Let's see what are these values:
+
+# In[6]:
+
+
+   # root.tag
+
+
+# In[7]:
+
+
+   # root.attrib
+
+
+# To access each child node of the root element, we iterate on these nodes (which are also *Elements*):
+
+# In[8]:
+
+
+   # for child in root:
+#     print(child.tag, child.attrib)
+
+
+# We can see that our XML comes with a lot of data. Next, we will try to get a subset of this data.
+
+# ### Selecting the data
+
+# Now that we have a better idea of the document's structure, let's build a pandas *DataFrame* with what we need. First, we can see that we only need the last node of the root element, "valores" (which stands for "values" in Portuguese); the other nodes are in fact just the header for the XML file. Let's explore this node.
+
+# In[9]:
+
+
+IDEBvalues = root.find('valores')
+
+
+
+# Note that there is one more layer of data here:
+
+# In[10]:
+
+
+# IDEBvalues
+
+
+# In[11]:
+
+
+   # IDEBvalues[0]
+
+
+# Now, we can explore the grandchildren of the root node: 
+
+# In[12]:
+
+
+   # for child in IDEBvalues:
+#     for grandchild in child:
+#         print(grandchild.tag, grandchild.attrib)
+
+
+# Now, let's extract the data we are interested in:
+
+# In[13]:
+
+
+data = []
+for child in IDEBvalues:
+    data.append([float(child[0].text), child[1].text, child[2].text])
+
+
+
+# In[14]:
+
+
+   # data
+
+
+# Since <a href="http://pandas.pydata.org/">Pandas</a> seems to be fashionable right now ;) let's use it to store and treat this data. We'll give it a shorter name though, pd.
+
+# In[15]:
+
+
+import pandas as pd
+
+
+
+# Now, we create our DataFrame from the preexisting data.
+
+# In[16]:
+
+
+IDEBTable = pd.DataFrame(data, columns = ["Valor", "Municipio", "Ano"])
+
+
+
+# In[17]:
+
+
+   # IDEBTable
+
+
+# You can see there are two sets of data here, one for 2007 and another for 2009. We'll only use the most recent data for our "analysis".
+
+# In[18]:
+
+
+IDEBTable = IDEBTable.loc[0:19]
+
+
+
+# ### Identifying the city codes
+# 
+# In our IDEBTable, cities are identified by their so called "IBGE Code", which is a code issued to each locality by the Brazilian Institute for Geography and Statistics (IBGE). In order to make this more user friendly, we'll read the most recent Excel file with the list of cities and their respective 7 digit codes (from 2014; these codes include a final verification digit). For this, we'll use the xlrd module, which must be manually installed; see <a href="https://pypi.python.org/pypi/xlrd">this</a>.
+
+# In[19]:
+
+
+localCodesIBGE = pd.read_excel("DTB_2014_Municipio.xls")
+
+
+
+# Now we can inspect the data by using the pandas *head* method for DataFrames:
+
+# In[20]:
+
+
+   # localCodesIBGE.head()
+
+
+# The columns we are interested in are just "Nome_UF", "Cod Municipio Completo" and "Nome_Município", which stand for State (or Province), Complete City Code and City Name, respectively.
+
+# In[21]:
+
+
+localCodesIBGE = localCodesIBGE[["Nome_UF", "Cod Municipio Completo", "Nome_Município"]]
+
+
+
+# Now, we have two DataFrames: **IDEBTable**, containing the complete IDEB data corresponding to city names, and **localCodesIBGE**, containing the corresponding city codes. We must select from the complete **localCodesIBGE** table only the rows corresponding to cities for which we have the IDEB value. For this, we will extract from both DataFrames the columns corresponding to the city codes (remember that in the **localCodesIBGE** table, codes have an extra verification code which we will not use):
+
+# In[42]:
+
+
+IDEBCities = IDEBTable["Municipio"]
+cities = localCodesIBGE["Cod Municipio Completo"].map(lambda x: str(x)[0:6])
+
+
+
+# Note that we have used *map* to transform numerical data into strings, removing the last digit.
+# 
+# Now, both **IDEBCities** and **cities** are pandas Series objects. To get the indices of cities for which we have IDEB data, first we will identify which codes are **not** in **IDEBCities**:
+
+# In[43]:
+
+
+citiesToRemove = cities[~cities.isin(IDEBCities)]
+
+
+
+# We remove the corresponding rows from the localCodesIBGE table:
+
+# In[45]:
+
+
+newTable = localCodesIBGE.drop(citiesToRemove.index).reset_index(drop=True)
+
+
+
+# Finally, we will create a new DataFrame joining city name and IDEB value:
+
+# In[46]:
+
+
+finalData = pd.concat([newTable, IDEBTable], axis=1)
+
+
+
+# This gives
+
+# In[47]:
+
+
+finalData
+
+
+
+# ## Finishing up: a pretty figure
+# 
+# In order to include graphics in notebooks, usually the first cell in the notebook contains the code
+# 
+# % matplotlib inline
+# 
+# or
+# 
+# % matplotlib notebook
+# 
+# Since we don't want to sacrifice the legibility of our *article* by starting it with some misterious command, we can use the **init_cell** nbextension so that a later cell is executed first on our notebook ([More details](#about_initcell)).
+# 
+# First, let's import the pyplot sublibrary of the matplotlib library and call it plt:
+
+# In[48]:
+
+
+import matplotlib.pyplot as plt
+
+
+
+# We'll do a very simple plot, but for this it would be nice to use the city names instead of the numerical indices in the finalData table:
+
+# In[49]:
+
+
+finalData.set_index(["Nome_Município"], inplace=True)
+   
+
+
+# Now, we will select the column with the values ("Valor") for the IDEB by city in the finalData table (note that the result of this operation is a Series):
+
+# In[50]:
+
+
+finalData["Valor"]
+
+
+
+# We are ready for our pretty (yet irrelevant) picture.
+
+# In[52]:
+
+
+finalData["Valor"].plot(kind='barh')
+plt.title("IDEB by city (Data from 2009)")
+
+
+
+# ## Comments about automatic documentation and script generation
+# 
+# To convert this notebook to a regular Python .py script, use 
+#jupyter-nbconvert --to python 'IDEB.ipynb' --template=removeextracode.tpl
+# The removeextracode.tpl has the following content:
+#{% extends 'python.tpl'%}
+
+#{% block input %}
+#{% if 'codecomment' in cell['metadata'].get('tags', []) %}
+#   {{ cell.source | comment_lines }}
+#{% else %}
+#   {{ cell.source | ipython2python }}
+#{% endif %}
+#{% endblock input %}
+# This means that we will include all notebook cells tagged with **codecomment** as comments on our script. This is to avoid generating a unusable script including our inspection of objects and attempts at solving a problem.
+# 
+# For more details on templates and the nbconvert extension, check <a href="https://jupyter-contrib-nbextensions.readthedocs.io/en/latest/">this page</a>, for example.
+
+# ## Initialization cell <a id='about_initcell'></a>
+# 
+# Through the "init_cell" extension (also from nbextensions), it is possible to alter the order of execution of notebook cells. If we look at the metadata of the cell below, we can see that it is marked to be executed before all other cells, and so we obtain the desired result when we run all cells in the notebook. (This command allows us to see inline graphics inside our notebook).
+
+# In[53]:
+
+
+   # %matplotlib inline
+
